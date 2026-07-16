@@ -1,0 +1,60 @@
+{
+  "name": "token-listrik",
+  "version": "1.0.0",
+  "description": "CLI toolkit for harvesting AI provider tokens (Kiro, Cloudflare, Codebuddy, AISA, Grok) and wiring them into 9Router — Puppeteer for Google flows, Camoufox for anti-bot signup",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "keywords": [
+    "kiro",
+    "cloudflare",
+    "codebuddy",
+    "aisa",
+    "grok",
+    "camoufox",
+    "automation",
+    "cli",
+    "puppeteer",
+    "token-harvesting",
+    "oauth",
+    "workers-ai",
+    "9router",
+    "parallel-processing",
+    "browser-automation"
+  ],
+  "author": {
+    "name": "lulucianai",
+    "url": "https://github.com/lulucianai"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lulucianai/token-listrik.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lulucianai/token-listrik/issues"
+  },
+  "homepage": "https://github.com/lulucianai/token-listrik#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "camoufox-js": "^0.11.1",
+    "cloakbrowser": "^0.4.10",
+    "playwright": "^1.61.1",
+    "playwright-core": "^1.61.1",
+    "ansi-colors": "^4.1.3",
+    "cli-progress": "^3.12.0",
+    "inquirer": "^9.3.7",
+    "puppeteer": "^24.43.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "eslint": "^10.6.0",
+    "eslint-plugin-node": "^11.1.0"
+  }
+}
