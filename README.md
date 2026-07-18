@@ -20,7 +20,7 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
   - Automatic proxy rotation on 429 rate limits (up to 5 proxies per account)
   - Cookie persistence between phases to prevent state mismatch errors
   - 30-90s cooldown with proxy rotation, 5-10min without proxy
-- 🤖 **AISA Farm** - Auto signup via Camoufox + tempmail
+- 🤖 **AISA Farm** - Auto signup via Camoufox + tempmail, then import API key to 9Router (openai-compatible `api.aisa.one/v1`)
 - ⚡ **Grok Farm** - Auto signup on accounts.x.ai + optional 9Router Grok CLI inject
 - 🔐 **Grok Login** - Login existing Grok accounts + 9Router OAuth inject
 - 🚀 **Multi-select Automations** - Checkbox to run any combination of Google-based automations in parallel
@@ -168,8 +168,9 @@ No `accounts.txt` needed. Each run:
 
 1. Creates a tempmail inbox
 2. Signs up via Camoufox (Turnstile-aware)
-3. Saves keys / credentials
-4. Grok: optionally injects into 9Router Grok CLI (default on)
+3. Saves keys / credentials to disk
+4. **AISA (default):** ensures 9Router provider node `aisa` (`https://api.aisa.one/v1`, openai-compatible) and `POST /api/providers` with the farmed key. Choose “Signup only” to skip import.
+5. **Grok (default):** injects into 9Router Grok CLI via browser OAuth. Choose “Signup only” to skip inject.
 
 ### Grok Login
 
@@ -183,7 +184,7 @@ npm start
 
 # Choose from menu:
 # › Run Automations          (checkbox: Kiro / CF / Codebuddy / TokenGo)
-#   AISA Farm (Camoufox)
+#   AISA Farm (Camoufox + 9Router)
 #   Grok Farm (Camoufox + 9Router)
 #   Grok Login + 9Router Inject
 #   Settings
@@ -260,8 +261,10 @@ After each automation run, you'll see a detailed report:
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
   - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router)
   - `tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
-  - `aisa_keys.txt` / `apikey.txt` — AISA API keys
+  - `aisa_keys.txt` — AISA keys (`email|apiKey`)
+  - `apikey.txt` — AISA keys (legacy one-key-per-line)
   - `grok_keys.txt` — Grok status lines
+- **`aisa_account.json`** - AISA email + key + import status
 - **`result.txt`** - Grok `email:password` lines from farm
 - **`grok_accounts.json`** - Grok account metadata
 - **`login_result.txt`** - Grok login/inject status
@@ -403,7 +406,7 @@ Permission error when launching Chrome. Common causes:
 
 ## 📄 License
 
-ISC
+ISC — see [LICENSE](./LICENSE).
 
 ## 👤 Author
 

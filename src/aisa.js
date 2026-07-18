@@ -46,10 +46,13 @@ async function findCodeInput(page, frames) {
   return null;
 }
 
-function saveApiKey(email, apiKey, log) {
+const AISA_BASE_URL = "https://api.aisa.one/v1";
+const AISA_DEFAULT_MODEL = "gpt-4.1";
+
+function saveApiKey(email, apiKey, log, extra = {}) {
   const resultFile = getResultFile("aisa");
   ensureFileExists(resultFile);
-  fs.appendFileSync(resultFile, `${apiKey}\n`);
+  fs.appendFileSync(resultFile, `${email}|${apiKey}\n`);
   log(`API key saved to ${resultFile}`);
 
   // Also keep legacy-compatible apikey.txt for drop-in scripts
@@ -64,13 +67,132 @@ function saveApiKey(email, apiKey, log) {
   } catch (_) {
     accounts = [];
   }
-  accounts.push({ email, apiKey, createdAt: new Date().toISOString() });
+  accounts.push({
+    email,
+    apiKey,
+    createdAt: new Date().toISOString(),
+    ...extra,
+  });
   fs.writeFileSync(accountFile, JSON.stringify(accounts, null, 2));
   log("Account appended to aisa_account.json");
 }
 
-async function farmOneAisa(idx, log, updateProgress) {
+/**
+ * Ensure an openai-compatible AISA provider node exists in 9Router.
+ * Same pattern as TokenGo: GET /api/provider-nodes then POST if missing.
+ * @returns {Promise<string>} provider node id
+ */
+async function ensureAisaProviderNode(log) {
+  log("Checking AISA provider node in 9Router...");
+
   const config = getConfig();
+  const baseUrl = config.routerUrl.replace(/\/$/, "");
+
+  const listResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!listResponse.ok) {
+    throw new Error(
+      `Failed to list provider nodes: ${listResponse.status}`,
+    );
+  }
+
+  const listData = await listResponse.json();
+  const nodes = listData.nodes || listData;
+
+  const existingNode = Array.isArray(nodes)
+    ? nodes.find(
+      (n) =>
+        n.prefix === "aisa" ||
+          (n.name && String(n.name).toLowerCase() === "aisa"),
+    )
+    : null;
+
+  if (existingNode) {
+    log(`AISA provider node exists: ${existingNode.id}`);
+    return existingNode.id;
+  }
+
+  log("Creating AISA provider node...");
+
+  const createResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      name: "AISA",
+      prefix: "aisa",
+      apiType: "chat",
+      baseUrl: AISA_BASE_URL,
+      type: "openai-compatible",
+    }),
+  });
+
+  if (!createResponse.ok) {
+    const errorText = await createResponse.text();
+    throw new Error(
+      `Failed to create AISA provider node: ${createResponse.status} ${errorText}`,
+    );
+  }
+
+  const createData = await createResponse.json();
+  const nodeId = createData.id || createData.node?.id;
+
+  if (!nodeId) {
+    throw new Error(
+      `No ID returned from provider node creation: ${JSON.stringify(createData)}`,
+    );
+  }
+
+  log(`AISA provider node created: ${nodeId}`);
+  return nodeId;
+}
+
+/**
+ * Register a farmed AISA API key on 9Router under the AISA provider node.
+ */
+async function importAisaKeyToRouter(providerNodeId, email, apiKey, log) {
+  log("Importing AISA key to 9Router...");
+
+  const config = getConfig();
+  const baseUrl = config.routerUrl.replace(/\/$/, "");
+  const short = email.split("@")[0].slice(0, 12);
+  const connectionName = `aisa_${short}`;
+
+  const response = await fetch(`${baseUrl}/api/providers`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      provider: providerNodeId,
+      name: connectionName,
+      apiKey,
+      defaultModel: AISA_DEFAULT_MODEL,
+      priority: 1,
+      proxyPoolId: null,
+      testStatus: "active",
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Router registration failed: ${response.status} ${errorText}`,
+    );
+  }
+
+  log(`AISA key for ${email} imported to 9Router as "${connectionName}"`);
+}
+
+async function farmOneAisa(idx, log, updateProgress, opts = {}) {
+  const config = getConfig();
+  const signupOnly = !!opts.signupOnly;
   const slog = (msg) => log(`[AISA #${idx}] ${msg}`);
 
   updateProgress({ step: "Creating tempmail", email: `farm#${idx}` });
@@ -376,11 +498,35 @@ async function farmOneAisa(idx, log, updateProgress) {
     }
 
     const apiKey = apiRes.api_keys[0].key_value;
-    saveApiKey(email, apiKey, slog);
-    slog(`SUCCESS: ${apiKey}`);
+    let routerStatus = "file_only";
+
+    if (!signupOnly) {
+      updateProgress({ step: STEPS.IMPORTING, email });
+      try {
+        const providerNodeId = await ensureAisaProviderNode(slog);
+        await importAisaKeyToRouter(providerNodeId, email, apiKey, slog);
+        routerStatus = "injected";
+      } catch (importErr) {
+        routerStatus = "injection_failed";
+        slog(
+          `9Router import failed (key still saved to file): ${importErr.message}`,
+        );
+      }
+    }
+
+    saveApiKey(email, apiKey, slog, {
+      status: routerStatus,
+      password: AISA_PASSWORD,
+    });
+    slog(`SUCCESS: ${apiKey} (${routerStatus})`);
     updateProgress({ step: STEPS.DONE });
 
-    return { email, apiKey, success: true };
+    return {
+      email,
+      apiKey,
+      success: true,
+      status: routerStatus,
+    };
   } finally {
     await browser.close().catch(() => {});
     slog("Browser closed.");
@@ -389,15 +535,18 @@ async function farmOneAisa(idx, log, updateProgress) {
 
 /**
  * @param {number} [count] how many accounts to farm
+ * @param {object} [opts]
+ * @param {boolean} [opts.signupOnly] skip 9Router import (file only)
  */
-async function runAisaAutomation(count) {
+async function runAisaAutomation(count, opts = {}) {
   const config = getConfig();
   const logger = createFileLogger();
   const total = Math.max(1, Number(count) || config.farmCount || 1);
+  const signupOnly = !!opts.signupOnly;
 
   const startedAt = Date.now();
   const progress = createProgressManager(
-    `🤖 AISA Farm — ${total} accounts (Camoufox)`,
+    `🤖 AISA Farm — ${total} accounts (Camoufox${signupOnly ? ", signup-only" : " + 9Router"})`,
   );
   progress.addWorker("aisa-0", total, "AISA W1");
 
@@ -423,7 +572,9 @@ async function runAisaAutomation(count) {
 
     try {
       logger.log(`=== AISA Account ${i}/${total} ===`);
-      const result = await farmOneAisa(i, logger.log, updateProgress);
+      const result = await farmOneAisa(i, logger.log, updateProgress, {
+        signupOnly,
+      });
       email = result.email;
       accountSuccess = true;
       successCount += 1;
@@ -471,6 +622,9 @@ async function runAisaAutomation(count) {
   );
   console.log(`📄 Log: ${logger.logFile}`);
   console.log(`🔑 Keys: ${getResultFile("aisa")} / apikey.txt`);
+  if (!signupOnly) {
+    console.log("🔌 9Router: openai-compatible node prefix=aisa → api.aisa.one/v1");
+  }
   console.log("");
 
   logger.close();
@@ -480,4 +634,6 @@ async function runAisaAutomation(count) {
 
 module.exports = {
   runAisaAutomation,
+  ensureAisaProviderNode,
+  importAisaKeyToRouter,
 };

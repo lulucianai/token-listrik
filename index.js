@@ -324,7 +324,7 @@ async function main() {
                 message: "Choose action:",
                 choices: [
                     { name: "Run Automations", value: "run" },
-                    { name: "AISA Farm (Camoufox)", value: "aisa" },
+                    { name: "AISA Farm (Camoufox + 9Router)", value: "aisa" },
                     { name: "Grok Farm (Camoufox + 9Router)", value: "grok_farm" },
                     { name: "Grok Login + 9Router Inject", value: "grok_login" },
                     { name: "Settings", value: "settings" },
@@ -427,7 +427,15 @@ async function main() {
             }
             case "aisa": {
                 const count = await askFarmCount(getConfig().farmCount || 1);
-                await runAisaAutomation(count);
+                const { signupOnly } = await inquirer.prompt([
+                    {
+                        type: "confirm",
+                        name: "signupOnly",
+                        message: "Signup only (skip 9Router import)?",
+                        default: false,
+                    },
+                ]);
+                await runAisaAutomation(count, { signupOnly });
                 await waitForEnter();
                 break;
             }
