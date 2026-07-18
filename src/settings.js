@@ -1,199 +1,228 @@
+const path = require("path");
 const { getConfig, reloadConfig, updateEnvValue } = require("./config");
 const { readAccounts } = require("./utils");
 
-async function openSettings() {
-  const inquirer = (await import("inquirer")).default;
-  let running = true;
+function displaySettingsPanel(config, accounts) {
+    const rows = [
+        ["Router URL", config.routerUrl],
+        [
+            "Router Password",
+            config.routerPassword ? "********" : "(empty)",
+        ],
+        ["PW Headless", config.headless ? "true" : "false"],
+        ["Chrome Path", config.chromeExecutablePath],
+        [
+            "Account File",
+            `${path.basename(config.accountFile)} (${accounts.length} accounts)`,
+        ],
+        ["Browser Count", String(config.browserCount)],
+        ["Farm Count", String(config.farmCount)],
+    ];
 
-  while (running) {
-    const config = getConfig();
-    const accounts = readAccounts();
+    const labelWidth = 15;
+    const maxValueLen = Math.max(...rows.map(([, v]) => v.length));
+    const innerWidth = labelWidth + 3 + maxValueLen;
+    const boxWidth = innerWidth + 4;
+
+    const title = "Settings";
+    const titleDisplayLen = title.length;
+    const titlePadLeft = Math.floor((boxWidth - 2 - titleDisplayLen) / 2);
+    const titlePadRight = boxWidth - titleDisplayLen - titlePadLeft - 2;
 
     console.log("");
-    console.log("⚙️  Settings");
-    console.log("─".repeat(50));
-    console.log(`  1. Router URL       : ${config.routerUrl}`);
+    console.log(`╔${"═".repeat(boxWidth - 2)}╗`);
     console.log(
-      `  2. Router Password  : ${config.routerPassword ? "********" : "(empty)"}`,
+        `║${" ".repeat(titlePadLeft)}${title}${" ".repeat(titlePadRight)}║`,
     );
-    console.log(
-      `  3. PW Headless      : ${config.headless ? "true (1)" : "false (0)"}`,
-    );
-    console.log(`  4. Chrome Executable: ${config.chromeExecutablePath}`);
-    console.log(
-      `  5. Account File     : ${config.accountFile} (${accounts.length} accounts)`,
-    );
-    console.log(`  6. Browser Count    : ${config.browserCount}`);
-    console.log(`  7. Farm Count       : ${config.farmCount}`);
-    console.log("  8. ← Back");
-    console.log("─".repeat(50));
+    console.log(`╠${"═".repeat(boxWidth - 2)}╣`);
 
-    const { choice } = await inquirer.prompt([
-      {
-        type: "list",
-        name: "choice",
-        message: "Choose setting to modify:",
-        choices: [
-          { name: "1. Router URL", value: "router_url" },
-          { name: "2. Router Password", value: "router_password" },
-          { name: "3. PW Headless", value: "pw_headless" },
-          { name: "4. Chrome Executable", value: "chrome_path" },
-          { name: "5. Account File", value: "account_file" },
-          { name: "6. Browser Count", value: "browser_count" },
-          { name: "7. Farm Count", value: "farm_count" },
-          { name: "8. ← Back", value: "back" },
-        ],
-      },
-    ]);
-
-    if (choice === "back") {
-      running = false;
-      break;
+    for (const [label, value] of rows) {
+        const line = `${label.padEnd(labelWidth)}: ${value}`;
+        console.log(`║  ${line.padEnd(boxWidth - 4)}║`);
     }
 
-    switch (choice) {
-      case "router_url": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "input",
-            name: "value",
-            message: "Enter new Router URL:",
-            default: config.routerUrl,
-            validate: (input) => {
-              try {
-                new URL(input);
-                return true;
-              } catch {
-                return "Invalid URL. Example: http://127.0.0.1:20128/";
-              }
+    console.log(`╚${"═".repeat(boxWidth - 2)}╝`);
+    console.log("");
+}
+
+async function openSettings() {
+    const inquirer = (await import("inquirer")).default;
+    let running = true;
+
+    while (running) {
+        console.clear();
+
+        const config = getConfig();
+        const accounts = readAccounts();
+
+        displaySettingsPanel(config, accounts);
+
+        const { choice } = await inquirer.prompt([
+            {
+                type: "list",
+                name: "choice",
+                message: "Choose setting to modify:",
+                choices: [
+                    { name: "Router URL", value: "router_url" },
+                    { name: "Router Password", value: "router_password" },
+                    { name: "PW Headless", value: "pw_headless" },
+                    { name: "Chrome Executable", value: "chrome_path" },
+                    { name: "Account File", value: "account_file" },
+                    { name: "Browser Count", value: "browser_count" },
+                    { name: "Farm Count", value: "farm_count" },
+                    { name: "← Back", value: "back" },
+                ],
             },
-          },
         ]);
 
-        updateEnvValue("ROUTER_URL", value);
-        reloadConfig();
-        console.log("✅ Router URL updated!");
-        break;
-      }
+        if (choice === "back") {
+            running = false;
+            break;
+        }
 
-      case "router_password": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "password",
-            name: "value",
-            message: "Enter 9Router password:",
-            mask: "*",
-            default: config.routerPassword,
-          },
-        ]);
+        switch (choice) {
+            case "router_url": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "input",
+                        name: "value",
+                        message: "Enter new Router URL:",
+                        default: config.routerUrl,
+                        validate: (input) => {
+                            try {
+                                new URL(input);
+                                return true;
+                            } catch {
+                                return "Invalid URL. Example: http://127.0.0.1:20128/";
+                            }
+                        },
+                    },
+                ]);
 
-        updateEnvValue("ROUTER_PASSWORD", value);
-        reloadConfig();
-        console.log("✅ Router password updated!");
-        break;
-      }
+                updateEnvValue("ROUTER_URL", value);
+                reloadConfig();
+                console.log("Router URL updated!");
+                break;
+            }
 
-      case "pw_headless": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "list",
-            name: "value",
-            message: "PW Headless mode:",
-            choices: [
-              { name: "true (headless)", value: "1" },
-              { name: "false (visible browser)", value: "0" },
-            ],
-            default: config.headless ? "1" : "0",
-          },
-        ]);
+            case "router_password": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "password",
+                        name: "value",
+                        message: "Enter 9Router password:",
+                        mask: "*",
+                        default: config.routerPassword,
+                    },
+                ]);
 
-        updateEnvValue("PW_HEADLESS", value);
-        reloadConfig();
-        console.log("✅ PW Headless updated!");
-        break;
-      }
+                updateEnvValue("ROUTER_PASSWORD", value);
+                reloadConfig();
+                console.log("Router password updated!");
+                break;
+            }
 
-      case "chrome_path": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "input",
-            name: "value",
-            message: "Enter Chrome executable path:",
-            default: config.chromeExecutablePath,
-          },
-        ]);
+            case "pw_headless": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "list",
+                        name: "value",
+                        message: "PW Headless mode:",
+                        choices: [
+                            { name: "true (headless)", value: "1" },
+                            { name: "false (visible browser)", value: "0" },
+                        ],
+                        default: config.headless ? "1" : "0",
+                    },
+                ]);
 
-        updateEnvValue("CHROME_EXECUTABLE_PATH", value);
-        reloadConfig();
-        console.log("✅ Chrome path updated!");
-        break;
-      }
+                updateEnvValue("PW_HEADLESS", value);
+                reloadConfig();
+                console.log("PW Headless updated!");
+                break;
+            }
 
-      case "account_file": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "input",
-            name: "value",
-            message: "Enter account file name:",
-            default: "accounts.txt",
-          },
-        ]);
+            case "chrome_path": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "input",
+                        name: "value",
+                        message: "Enter Chrome executable path:",
+                        default: config.chromeExecutablePath,
+                    },
+                ]);
 
-        updateEnvValue("ACCOUNT_FILE", value);
-        reloadConfig();
-        console.log("✅ Account file updated!");
-        break;
-      }
+                updateEnvValue("CHROME_EXECUTABLE_PATH", value);
+                reloadConfig();
+                console.log("Chrome path updated!");
+                break;
+            }
 
-      case "browser_count": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "number",
-            name: "value",
-            message: "Enter browser count (Puppeteer workers):",
-            default: config.browserCount,
-            validate: (input) => {
-              const num = Number(input);
-              if (!Number.isFinite(num) || num < 1) {
-                return "Must be a number >= 1";
-              }
-              return true;
-            },
-          },
-        ]);
+            case "account_file": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "input",
+                        name: "value",
+                        message: "Enter account file name:",
+                        default: "accounts.txt",
+                    },
+                ]);
 
-        updateEnvValue("BROWSER_COUNT", String(value));
-        reloadConfig();
-        console.log("✅ Browser count updated!");
-        break;
-      }
+                updateEnvValue("ACCOUNT_FILE", value);
+                reloadConfig();
+                console.log("Account file updated!");
+                break;
+            }
 
-      case "farm_count": {
-        const { value } = await inquirer.prompt([
-          {
-            type: "number",
-            name: "value",
-            message: "Default farm count (AISA / Grok):",
-            default: config.farmCount,
-            validate: (input) => {
-              const num = Number(input);
-              if (!Number.isFinite(num) || num < 1) {
-                return "Must be a number >= 1";
-              }
-              return true;
-            },
-          },
-        ]);
+            case "browser_count": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "number",
+                        name: "value",
+                        message: "Enter browser count (Puppeteer workers):",
+                        default: config.browserCount,
+                        validate: (input) => {
+                            const num = Number(input);
+                            if (!Number.isFinite(num) || num < 1) {
+                                return "Must be a number >= 1";
+                            }
+                            return true;
+                        },
+                    },
+                ]);
 
-        updateEnvValue("FARM_COUNT", String(value));
-        reloadConfig();
-        console.log("✅ Farm count updated!");
-        break;
-      }
+                updateEnvValue("BROWSER_COUNT", String(value));
+                reloadConfig();
+                console.log("Browser count updated!");
+                break;
+            }
+
+            case "farm_count": {
+                const { value } = await inquirer.prompt([
+                    {
+                        type: "number",
+                        name: "value",
+                        message: "Default farm count (AISA / Grok):",
+                        default: config.farmCount,
+                        validate: (input) => {
+                            const num = Number(input);
+                            if (!Number.isFinite(num) || num < 1) {
+                                return "Must be a number >= 1";
+                            }
+                            return true;
+                        },
+                    },
+                ]);
+
+                updateEnvValue("FARM_COUNT", String(value));
+                reloadConfig();
+                console.log("Farm count updated!");
+                break;
+            }
+        }
     }
-  }
 }
 
 module.exports = {
-  openSettings,
+    openSettings,
 };

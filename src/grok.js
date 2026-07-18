@@ -153,6 +153,9 @@ async function signupGrok(page, idx, log) {
     waitUntil: "domcontentloaded",
     timeout: SIGNUP_TIMEOUT,
   });
+  await page
+    .waitForLoadState("networkidle", { timeout: 20000 })
+    .catch(() => {});
   await sleep(2000);
 
   const ssDir = path.join(ROOT_DIR, "screenshots");
@@ -163,14 +166,82 @@ async function signupGrok(page, idx, log) {
     .screenshot({ path: path.join(ssDir, `grok_${idx}_01_signup.png`) })
     .catch(() => {});
 
-  const cookieBtn = page.locator("button", { hasText: /accept all/i });
-  if (await cookieBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await cookieBtn.click({ timeout: 5000 }).catch(() => {});
-    await sleep(1000);
+  // Diagnose blocked / challenge pages (common on VPS + headless + DC IP)
+  const pageHint = await page
+    .evaluate(() => {
+      const t = (document.title || "").trim();
+      const body = (document.body?.innerText || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 280);
+      return { title: t, url: location.href, body };
+    })
+    .catch(() => ({ title: "", url: page.url(), body: "" }));
+  log(`Signup page: title="${pageHint.title}" url=${pageHint.url}`);
+  if (
+    /just a moment|attention required|cloudflare|cf-browser|checking your browser|access denied|captcha/i.test(
+      `${pageHint.title} ${pageHint.body}`,
+    )
+  ) {
+    log(`BLOCKED/CHALLENGE page body: ${pageHint.body.slice(0, 160)}`);
+    await page
+      .screenshot({ path: path.join(ssDir, `grok_${idx}_01_blocked.png`) })
+      .catch(() => {});
+    throw new Error(
+      `Signup page blocked/challenged (likely VPS IP or headless). title="${pageHint.title}". ` +
+        "Try: visible browser (PW_HEADLESS=0), residential proxy, or check screenshots.",
+    );
+  }
+
+  // Cookie banner (OneTrust / xAI variants)
+  for (const re of [/accept all cookies/i, /accept all/i, /allow all/i]) {
+    const cookieBtn = page.locator("button", { hasText: re }).first();
+    if (await cookieBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      log("Accepting cookies...");
+      await cookieBtn.click({ timeout: 5000 }).catch(() => {});
+      await sleep(1000);
+      break;
+    }
   }
 
   log('Clicking "Sign up with email"...');
-  await page.locator("button", { hasText: "Sign up with email" }).click();
+  const emailSignup = page
+    .getByRole("button", { name: /sign up with email/i })
+    .or(
+      page
+        .locator('button, [role="button"], a')
+        .filter({ hasText: /sign up with email/i }),
+    )
+    .first();
+  try {
+    await emailSignup.waitFor({ state: "visible", timeout: 25000 });
+    await emailSignup.click({ timeout: 10000 });
+  } catch (e) {
+    await page
+      .screenshot({
+        path: path.join(ssDir, `grok_${idx}_01_no_email_btn.png`),
+      })
+      .catch(() => {});
+    const again = await page
+      .evaluate(() => ({
+        title: document.title,
+        body: (document.body?.innerText || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 400),
+        buttons: [...document.querySelectorAll('button, [role="button"], a')]
+          .map((el) => (el.innerText || el.textContent || "").trim())
+          .filter(Boolean)
+          .slice(0, 20),
+      }))
+      .catch(() => ({}));
+    log(
+      `No email signup btn. title="${again.title}" buttons=${JSON.stringify(again.buttons || [])}`,
+    );
+    throw new Error(
+      `Sign up with email not found. See screenshots/grok_${idx}_01_*.png — ${e.message?.slice(0, 80)}`,
+    );
+  }
   await sleep(2000);
 
   log("Filling email...");
@@ -421,8 +492,11 @@ async function loginGrok(page, account, log) {
       .first()
       .textContent()
       .catch(() => "");
+    const bodySnippet = await page
+      .evaluate(() => document.body?.innerText?.slice(0, 200) || "")
+      .catch(() => "");
     throw new Error(
-      `Login failed — still on: ${currentUrl}. ${errText || ""}`.trim(),
+      `Login failed — still on: ${currentUrl}. ${errText || bodySnippet}`.trim(),
     );
   }
 

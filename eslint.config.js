@@ -32,6 +32,12 @@ module.exports = [
                 clearInterval: "readonly",
                 Promise: "readonly",
                 fetch: "readonly",
+                URL: "readonly",
+                URLSearchParams: "readonly",
+                window: "readonly",
+                document: "readonly",
+                Event: "readonly",
+                location: "readonly",
             },
         },
         plugins: {
