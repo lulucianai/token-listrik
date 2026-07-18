@@ -7,6 +7,7 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
+const { runZylooAutomation } = require("./src/zyloo");
 const { runAisaAutomation } = require("./src/aisa");
 const { runGrokFarmAutomation, runGrokLoginAutomation } = require("./src/grok");
 const { openSettings } = require("./src/settings");
@@ -74,6 +75,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCodebuddyAutomation();
         } else if (automationType === "tokengo") {
             result = await runTokenGoAutomation();
+        } else if (automationType === "zyloo") {
+            result = await runZylooAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -212,6 +215,7 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         cloudflare: { name: "Cloudflare", fn: runCloudflareAutomation },
         codebuddy: { name: "Codebuddy", fn: runCodebuddyAutomation },
         tokengo: { name: "TokenGo", fn: runTokenGoAutomation },
+        zyloo: { name: "Zyloo", fn: runZylooAutomation },
     };
 
     console.log("");
@@ -242,6 +246,15 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         spinner.warn(
             colors.yellow(
                 "NOTE: TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy.",
+            ),
+        );
+    }
+
+    if (selectedAutomations.includes("zyloo")) {
+        console.log("");
+        spinner.warn(
+            colors.yellow(
+                "NOTE: Zyloo free event is 1 account per IP — prefer proxy pool; model zyloo/kimi-k3.",
             ),
         );
     }
@@ -351,6 +364,7 @@ async function main() {
                     cloudflare: { name: "Cloudflare" },
                     codebuddy: { name: "Codebuddy" },
                     tokengo: { name: "TokenGo" },
+                    zyloo: { name: "Zyloo" },
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -378,6 +392,10 @@ async function main() {
                                 name: "TokenGo Automation (30-90s cooldown with proxy rotation)",
                                 value: "tokengo",
                                 checked: true,
+                            },
+                            {
+                                name: "Zyloo Automation (Google → sk-zy-* / Kimi K3 event)",
+                                value: "zyloo",
                             },
                         ],
                     },

@@ -20,6 +20,10 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
   - Automatic proxy rotation on 429 rate limits (up to 5 proxies per account)
   - Cookie persistence between phases to prevent state mismatch errors
   - 30-90s cooldown with proxy rotation, 5-10min without proxy
+- ⚡ **Zyloo Automation** - Google sign-in → harvest `sk-zy-*` key (Kimi K3 event-ready) → 9Router openai-compatible (`api.zyloo.io/v1`, default model `zyloo/kimi-k3`)
+  - Visits `/dashboard/event` then `/dashboard/keys`
+  - Network + DOM key sniffing for `sk-zy-*`
+  - Free event is **1 account per IP** — use proxy pool
 - 🤖 **AISA Farm** - Auto signup via Camoufox + tempmail, then import API key to 9Router (openai-compatible `api.aisa.one/v1`)
 - ⚡ **Grok Farm** - Auto signup on accounts.x.ai + optional 9Router Grok CLI inject
 - 🔐 **Grok Login** - Login existing Grok accounts + 9Router OAuth inject
@@ -198,9 +202,12 @@ npm start
 ◉ Cloudflare Automation
 ◯ Codebuddy Automation [BETA] (Requires Residential Proxy)
 ◉ TokenGo Automation (30-90s cooldown with proxy rotation)
+◯ Zyloo Automation (Google → sk-zy-* / Kimi K3 event)
 ```
 
 If a proxy pool is configured, you can choose which automations use it.
+
+**Zyloo tip:** event free Kimi K3 = model `zyloo/kimi-k3`, base URL `https://api.zyloo.io/v1`. Zyloo documents **1 free account per network (IP)** — set `PROXY_POOL_FILE` and keep `BROWSER_COUNT` modest.
 
 ### Account Change Confirmation
 
@@ -261,6 +268,7 @@ After each automation run, you'll see a detailed report:
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
   - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router)
   - `tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
+  - `zyloo_keys.txt` — Zyloo keys (`email|sk-zy-...`)
   - `aisa_keys.txt` — AISA keys (`email|apiKey`)
   - `apikey.txt` — AISA keys (legacy one-key-per-line)
   - `grok_keys.txt` — Grok status lines
@@ -294,6 +302,7 @@ token-listrik/
 │   ├── google-login.js   # Google authentication helpers
 │   ├── kiro.js           # Kiro token harvesting logic
 │   ├── tokengo.js        # TokenGo API key harvesting with proxy rotation
+│   ├── zyloo.js          # Zyloo Google login + sk-zy key harvest (Kimi K3)
 │   ├── aisa.js           # AISA signup farm (Camoufox + tempmail)
 │   ├── grok.js           # Grok farm + login + 9Router inject
 │   ├── router-inject.js  # 9Router browser inject (Grok CLI OAuth)
