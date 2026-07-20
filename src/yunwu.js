@@ -334,16 +334,138 @@ async function fillField(page, candidates, value) {
 
 async function clickButtonByText(page, texts) {
   for (const text of texts) {
+    // Prefer role-based name match (handles "Get Verification Code")
+    try {
+      const byRole = page.getByRole("button", {
+        name: new RegExp(text, "i"),
+      });
+      if (await byRole.first().isVisible({ timeout: 800 }).catch(() => false)) {
+        await byRole.first().click({ timeout: 5000 });
+        return true;
+      }
+    } catch {
+      // fall through
+    }
     const btn = page
       .locator("button, a, [role='button']")
       .filter({ hasText: new RegExp(text, "i") })
       .first();
-    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await btn.click();
+    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await btn.click({ timeout: 5000 });
       return true;
     }
   }
   return false;
+}
+
+/** Click Yunwu "Get Verification Code" (EN/CN) next to email field. */
+async function clickGetVerificationCode(page, log) {
+  const patterns = [
+    /get\s*verification\s*code/i,
+    /send\s*verification\s*code/i,
+    /get\s*code/i,
+    /send\s*code/i,
+    /获取验证码/,
+    /发送验证码/,
+    /获取/,
+    /发送/,
+  ];
+
+  for (const re of patterns) {
+    try {
+      const byRole = page.getByRole("button", { name: re });
+      if (await byRole.first().isVisible({ timeout: 600 }).catch(() => false)) {
+        log(`Clicking send-code button (role: ${re})`);
+        await byRole.first().click({ timeout: 5000 });
+        return true;
+      }
+    } catch {
+      // continue
+    }
+    try {
+      const btn = page.locator("button").filter({ hasText: re }).first();
+      if (await btn.isVisible({ timeout: 600 }).catch(() => false)) {
+        log(`Clicking send-code button (text: ${re})`);
+        await btn.click({ timeout: 5000 });
+        return true;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // Semi Design input group: button sibling of email input
+  const nearEmail = await page
+    .evaluate(() => {
+      const email =
+        document.querySelector('input[type="email"]') ||
+        document.querySelector('input[placeholder*="Email" i]') ||
+        document.querySelector('input[placeholder*="邮箱"]');
+      if (!email) {
+        return null;
+      }
+      let root = email.parentElement;
+      for (let i = 0; i < 5 && root; i++) {
+        const btn = root.querySelector("button");
+        if (btn && /code|验证|发送|获取|send|get/i.test(btn.innerText || "")) {
+          btn.setAttribute("data-yunwu-send", "1");
+          return true;
+        }
+        root = root.parentElement;
+      }
+      return false;
+    })
+    .catch(() => false);
+
+  if (nearEmail) {
+    const btn = page.locator("button[data-yunwu-send='1']").first();
+    if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+      log("Clicking send-code button (near email input)");
+      await btn.click({ timeout: 5000 });
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function checkUserAgreement(page, log) {
+  const checked = await page
+    .evaluate(() => {
+      const boxes = [
+        ...document.querySelectorAll(
+          'input[type="checkbox"], .semi-checkbox, [role="checkbox"]',
+        ),
+      ];
+      for (const el of boxes) {
+        const label = (el.closest("label") || el.parentElement)?.innerText || "";
+        if (/agreement|协议|同意|user agreement/i.test(label) || boxes.length === 1) {
+          if (el.getAttribute("aria-checked") === "true" || el.checked) {
+            return "already";
+          }
+          if (el.tagName === "INPUT") {
+            el.click();
+            return "clicked-input";
+          }
+          el.click();
+          return "clicked";
+        }
+      }
+      // Fallback: first unchecked checkbox on form
+      const first = document.querySelector(
+        'input[type="checkbox"]:not(:checked)',
+      );
+      if (first) {
+        first.click();
+        return "clicked-first";
+      }
+      return "none";
+    })
+    .catch(() => "none");
+  if (checked && checked !== "none" && checked !== "already") {
+    log(`User agreement checkbox: ${checked}`);
+  }
+  return checked;
 }
 
 /**
@@ -353,29 +475,48 @@ async function clickButtonByText(page, texts) {
  * Yunwu uses go-captcha click-shape for send-code (captcha_send_code_enabled).
  * Auto-solving shapes is unreliable; headed browser + human click is supported.
  */
-async function waitForCaptchaAndSendCode(page, log, timeoutMs = 180000) {
+async function waitForCaptchaAndSendCode(page, log, timeoutMs = 180000, opts = {}) {
   const start = Date.now();
   let captchaSeen = false;
   let codeSent = false;
   let captchaToken = null;
+  let lastResend = 0;
+  const headless = !!opts.headless;
 
   const onResponse = async (response) => {
     try {
       const url = response.url();
-      if (url.includes("/api/go-captcha-check-data/") && response.status() === 200) {
+      if (
+        (url.includes("/api/go-captcha-check-data/") ||
+          url.includes("go-captcha") ||
+          url.includes("captcha")) &&
+        response.status() === 200
+      ) {
         const data = await response.json().catch(() => null);
-        if (data && data.code === 0 && data.token) {
-          captchaToken = data.token;
+        if (data && (data.code === 0 || data.success) && (data.token || data.data?.token)) {
+          captchaToken = data.token || data.data?.token;
           log("Captcha check passed (token captured)");
         }
       }
-      if (url.includes("/api/verification") && response.status() === 200) {
+      if (
+        (url.includes("/api/verification") ||
+          url.includes("/api/user/verification") ||
+          url.includes("send_email") ||
+          url.includes("send_code")) &&
+        response.status() === 200
+      ) {
         const data = await response.json().catch(() => null);
-        if (data && data.success) {
+        if (
+          data &&
+          (data.success === true ||
+            data.code === 0 ||
+            data.message === "success" ||
+            /success|发送成功|已发送/i.test(String(data.message || "")))
+        ) {
           codeSent = true;
           log("Verification email requested successfully");
         } else if (data && data.message) {
-          log(`Verification API: ${data.message}`);
+          log(`Verification API: ${JSON.stringify(data).slice(0, 160)}`);
         }
       }
     } catch {
@@ -397,33 +538,50 @@ async function waitForCaptchaAndSendCode(page, log, timeoutMs = 180000) {
           const hasShape =
             !!document.querySelector("canvas") ||
             !!document.querySelector('img[src^="data:image"]') ||
-            /点击|click|验证|captcha|换一张/i.test(text);
+            /点击|click|验证|captcha|换一张|点选/i.test(text);
           const modal =
             document.querySelector(".semi-modal") ||
+            document.querySelector(".semi-modal-wrap") ||
             document.querySelector("[class*='captcha']") ||
-            document.querySelector("[class*='Captcha']");
-          return !!(hasShape && modal) || /人机验证|完成验证|slide|click/i.test(text);
+            document.querySelector("[class*='Captcha']") ||
+            document.querySelector("[class*='go-captcha']");
+          return (
+            !!(hasShape && modal) ||
+            /人机验证|完成验证|slide|点选|click the|select all/i.test(text)
+          );
         })
         .catch(() => false);
 
       if (captchaVisible && !captchaSeen) {
         captchaSeen = true;
+        if (headless) {
+          log(
+            "⚠️  go-captcha opened in HEADLESS mode — cannot solve click-shape automatically.",
+          );
+          log(
+            "   Re-run headed: node -e 'require(\"./src/yunwu\").runYunwuAutomation(1)'",
+          );
+          log("   (do NOT pass headless:true / YUNWU_HEADLESS=1)");
+          // Fail fast instead of waiting full timeout
+          return {
+            ok: false,
+            captchaToken,
+            error:
+              "go-captcha requires headed browser — run without headless (default)",
+          };
+        }
         log(
           "⚠️  go-captcha (click-shape) is open — solve it in the browser window, then wait…",
         );
-        log("   Tip: run with PW_HEADLESS=0 if the window is hidden.");
       }
 
-      // If captcha already solved (token) but send not fired, try click send again
-      if (captchaToken && !codeSent) {
-        await clickButtonByText(page, [
-          "获取验证码",
-          "发送验证码",
-          "发送",
-          "Send",
-          "Get code",
-          "获取",
-        ]);
+      // Re-click send-code periodically if no captcha / no success yet
+      const now = Date.now();
+      if (!codeSent && now - lastResend > 8000) {
+        lastResend = now;
+        if (captchaToken || !captchaSeen) {
+          await clickGetVerificationCode(page, log).catch(() => {});
+        }
       }
 
       await sleep(1500);
@@ -439,8 +597,8 @@ async function waitForCaptchaAndSendCode(page, log, timeoutMs = 180000) {
     ok: false,
     captchaToken,
     error: captchaSeen
-      ? "Captcha not completed in time (click-shape)"
-      : "Verification email was not sent (captcha/send timeout)",
+      ? "Captcha not completed in time (click-shape) — solve manually in headed window"
+      : "Verification email was not sent (send-code/captcha timeout)",
   };
 }
 
@@ -585,13 +743,10 @@ async function createYunwuApiToken(page, log, name) {
 async function farmOneYunwu(idx, log, updateProgress, opts = {}) {
   const config = getConfig();
   const signupOnly = !!opts.signupOnly;
-  // Click-shape captcha is nearly impossible headless; default headed for Yunwu.
+  // Click-shape captcha cannot be auto-solved; default HEADED.
+  // Only force headless if explicitly requested (will usually fail at captcha).
   const headless =
-    opts.headless !== undefined
-      ? opts.headless
-      : process.env.YUNWU_HEADLESS === "1"
-        ? true
-        : false;
+    opts.headless === true || process.env.YUNWU_HEADLESS === "1";
   const slog = (msg) => log(`[Yunwu #${idx}] ${msg}`);
 
   updateProgress({ step: "Creating tempmail", email: `farm#${idx}` });
@@ -705,21 +860,24 @@ async function farmOneYunwu(idx, log, updateProgress, opts = {}) {
 
     updateProgress({ step: "Send code / captcha" });
     slog("Requesting email verification code...");
-    const sendClicked = await clickButtonByText(page, [
-      "获取验证码",
-      "发送验证码",
-      "获取",
-      "Send code",
-      "Send",
-      "Get code",
-    ]);
+    const sendClicked = await clickGetVerificationCode(page, slog);
     if (!sendClicked) {
-      slog("Send-code button not found by text; trying near verification field…");
-      await page
-        .locator("button")
-        .nth(0)
-        .click()
-        .catch(() => {});
+      slog(
+        "Send-code button not found — dumping buttons for debug…",
+      );
+      const btnTexts = await page
+        .evaluate(() =>
+          [...document.querySelectorAll("button")]
+            .map((b) => (b.innerText || "").trim())
+            .filter(Boolean)
+            .slice(0, 20),
+        )
+        .catch(() => []);
+      slog(`Buttons on page: ${JSON.stringify(btnTexts)}`);
+      await ss("no_send_button");
+      throw new Error(
+        'Cannot find "Get Verification Code" button on register form',
+      );
     }
 
     const captchaWaitMs =
@@ -728,6 +886,7 @@ async function farmOneYunwu(idx, log, updateProgress, opts = {}) {
       page,
       slog,
       captchaWaitMs,
+      { headless },
     );
     if (!sendResult.ok) {
       await ss("captcha_timeout");
@@ -772,12 +931,14 @@ async function farmOneYunwu(idx, log, updateProgress, opts = {}) {
     await ss("code_filled");
 
     updateProgress({ step: "Submit register" });
-    slog("Submitting registration...");
+    slog("Checking user agreement + submitting registration...");
+    await checkUserAgreement(page, slog);
+    await sleep(400);
     const regSubmitted = await clickButtonByText(page, [
-      "注册",
-      "立即注册",
       "Sign up",
       "Register",
+      "注册",
+      "立即注册",
       "提交",
       "Confirm",
     ]);
@@ -939,10 +1100,13 @@ async function runYunwuAutomation(count, opts = {}) {
 
   console.log("");
   console.log(
-    "Note: Yunwu send-code uses go-captcha click-shape. Prefer headed browser (default).",
+    "Note: Yunwu uses go-captcha click-shape on Get Verification Code.",
   );
   console.log(
-    "      Solve captcha in the open window when prompted. Set YUNWU_CAPTCHA_TIMEOUT_MS to extend wait.",
+    "      Default = HEADED browser. Solve captcha manually when the popup opens.",
+  );
+  console.log(
+    "      Do not use YUNWU_HEADLESS=1 for full farm. Extend wait: YUNWU_CAPTCHA_TIMEOUT_MS=300000",
   );
   console.log("");
 

@@ -59,10 +59,17 @@ Living changelog of work done in-session / forks. Update this when shipping mean
 |------|--------|
 | **Tempmail** | Working with managed `tm_` key in local `.env`. CF worker still available as backup. |
 | **Grok farm full port** | Friend sent latest grok_farm.js (proxy per account + tempmail key + inject). Tempmail client done; optional: port proxy CLI flags into camoufox/grok. |
-| **Yunwu captcha** | go-captcha **click-shape** on send-code — auto-solve not implemented; headed browser + human click. Optional future: vision solver. |
-| **Local git cleanliness** | `~/codevibe/token-listrik` may have uncommitted mix vs GitHub; prefer commit after CF worker works. |
+| **Yunwu captcha** | UI forces **click-shape**, but **slide-basic** API token works for `/api/verification`. Auto-solve: `scripts/yunwu_slide_captcha.py` (OpenCV). |
+| **Yunwu email** | Tempmail domains blocked by Yunwu whitelist; use real Gmail/Outlook/QQ. OTP is often **alphanumeric** (e.g. `2c382d`), not 6 digits only. |
+| **Local git cleanliness** | Keys/accounts gitignored (`*_keys.txt`, `yunwu_account.json`, `.env`). |
 
 ---
+
+### Yunwu (2026-07-21)
+
+- UI: click **Get Verification Code** (EN), agreement checkbox, fail-fast headless, default headed.
+- Auto path: `scripts/yunwu_slide_captcha.py` + `scripts/yunwu_farm_gmails.js` (Gmail login → OTP → register → key → 9Router).
+- Verified live inject: provider node `yunwu` + connections `yunwu_*` on remote 9Router.
 
 ## Deferred / won't do (unless asked)
 
