@@ -8,13 +8,14 @@
 [![Last Commit](https://img.shields.io/github/last-commit/lulucianai/token-listrik)](https://github.com/lulucianai/token-listrik/commits/main)
 [![Code Style: ESLint](https://img.shields.io/badge/code_style-ESLint-5e5ce6.svg)](https://eslint.org/)
 
-Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, Codebuddy AI OAuth tokens, TokenGo API keys, plus AISA / Grok signup farms via Camoufox. Features multi-worker parallel processing, intelligent proxy rotation, detailed per-account reporting, and comprehensive error tracking. Tokens are imported into **[9Router](https://github.com/9router/9router)**.
+CLI to automate AI API credential setup and import them into a local OpenAI-compatible router. Supports multi-worker browser automation, optional proxy pools, progress reporting, and error tracking.
 
 ## ✨ Features
 
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
 - ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
-- 🤖 **Codebuddy Automation [BETA]** - Codebuddy AI OAuth token extraction (⚠️ requires residential proxies)
+- 🤖 **Codebuddy Automation [BETA]** - API device-code flow + Google login (⚠️ residential proxy; Google domains bypass proxy)
+- 🎫 **TokenGo** - Affiliate chain (`aff_code`), random token names, default group
 - 🎫 **TokenGo Automation** - TokenGo API key harvesting with intelligent proxy rotation
   - Hybrid HTTP + Puppeteer approach (Google OAuth via Puppeteer, API calls via HTTP)
   - Automatic proxy rotation on 429 rate limits (up to 5 proxies per account)
@@ -25,6 +26,7 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
   - Network + DOM key sniffing for `sk-zy-*`
   - Free event is **1 account per IP** — use proxy pool
 - 🤖 **AISA Farm** - Auto signup via Camoufox + tempmail, then import API key to 9Router (openai-compatible `api.aisa.one/v1`)
+- ☁️ **Yunwu Farm** - Auto signup on [yunwu.ai](https://yunwu.ai/register) via Camoufox + tempmail (NewAPI, go-captcha click-shape on send-code) → API key → 9Router (`https://yunwu.ai/v1`, default `deepseek-v4-pro`)
 - ⚡ **Grok Farm** - Auto signup on accounts.x.ai + optional 9Router Grok CLI inject
 - 🔐 **Grok Login** - Login existing Grok accounts + 9Router OAuth inject
 - 🚀 **Multi-select Automations** - Checkbox to run any combination of Google-based automations in parallel
@@ -41,10 +43,10 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 
 - Node.js 16+
 - Google Chrome or Chromium browser (Kiro / Cloudflare / Codebuddy / TokenGo)
-- **Camoufox** via `camoufox-js` (AISA / Grok — better Turnstile / WAF resistance)
+- **Camoufox** via `camoufox-js` (AISA / Yunwu / Grok — better Turnstile / WAF resistance)
 - Valid Google accounts (email|password format) for Google-based modes
-- **9Router** - Backend service for token management
-  - This tool harvests tokens and imports them to 9Router
+- **Local OpenAI-compatible router** (e.g. [9Router](https://github.com/9router/9router))
+  - This tool sets up credentials and imports them into the router
   - Must be running and accessible at configured `ROUTER_URL`
   - Default: `http://127.0.0.1:20128/`
 
@@ -106,10 +108,10 @@ EMAIL_POLL_INTERVAL_MS=5000
 | `PW_HEADLESS` | `1` = headless, `0` = visible browser | `1` |
 | `BROWSER_COUNT` | Number of parallel browser instances | `1` |
 | `BROWSER_SLOW_MO` | Delay between browser actions (ms) | `2` |
-| `FARM_COUNT` | Default account count for AISA / Grok farm prompts | `1` |
+| `FARM_COUNT` | Default account count for AISA / Yunwu / Grok farm prompts | `1` |
 | `CHROME_EXECUTABLE_PATH` | Path to Chrome/Chromium executable | Auto-detect |
 | `ACCOUNT_FILE` | Path to accounts file | `accounts.txt` |
-| `RESULT_FILE` | Auto-replaces `{provider}` with automation name (`kiro`, `cloudflare`, `tokengo`, `aisa`, `grok`) | `{provider}_keys.txt` |
+| `RESULT_FILE` | Auto-replaces `{provider}` with automation name (`kiro`, `cloudflare`, `tokengo`, `aisa`, `yunwu`, `grok`) | `{provider}_keys.txt` |
 | `ERROR_ACCOUNT_FILE` | Log file for failed accounts | `errorAccounts.txt` |
 | `PROXY_POOL_FILE` | Shared proxy pool file (optional) - workers auto-pick available proxies | `proxy_keys.txt` |
 | `DELAY_BEFORE_NEXT_CLICK_MS` | Delay before next click action | `1000` |
@@ -166,7 +168,7 @@ Instead of specifying proxies per account, you can use a shared proxy pool. Crea
 
 Enable by setting `PROXY_POOL_FILE=proxy_keys.txt` in `.env`
 
-### AISA / Grok Farm
+### AISA / Yunwu / Grok Farm
 
 No `accounts.txt` needed. Each run:
 
@@ -174,7 +176,8 @@ No `accounts.txt` needed. Each run:
 2. Signs up via Camoufox (Turnstile-aware)
 3. Saves keys / credentials to disk
 4. **AISA (default):** ensures 9Router provider node `aisa` (`https://api.aisa.one/v1`, openai-compatible) and `POST /api/providers` with the farmed key. Choose “Signup only” to skip import.
-5. **Grok (default):** injects into 9Router Grok CLI via browser OAuth. Choose “Signup only” to skip inject.
+5. **Yunwu (default):** NewAPI register at `yunwu.ai` + tempmail OTP; **go-captcha click-shape** on send-code needs a **headed** browser (default). Creates API token → provider node `yunwu` (`https://yunwu.ai/v1`). Choose “Signup only” to skip import.
+6. **Grok (default):** injects into 9Router Grok CLI via browser OAuth. Choose “Signup only” to skip inject.
 
 ### Grok Login
 
@@ -187,8 +190,9 @@ Uses farmed credentials from `result.txt` (`email:password`) or `grok_accounts.j
 npm start
 
 # Choose from menu:
-# › Run Automations          (checkbox: Kiro / CF / Codebuddy / TokenGo)
+# › Run Automations          (checkbox: Kiro / CF / Codebuddy / TokenGo / Zyloo)
 #   AISA Farm (Camoufox + 9Router)
+#   Yunwu Farm (Camoufox + tempmail + 9Router)
 #   Grok Farm (Camoufox + 9Router)
 #   Grok Login + 9Router Inject
 #   Settings
@@ -270,9 +274,11 @@ After each automation run, you'll see a detailed report:
   - `tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
   - `zyloo_keys.txt` — Zyloo keys (`email|sk-zy-...`)
   - `aisa_keys.txt` — AISA keys (`email|apiKey`)
+  - `yunwu_keys.txt` — Yunwu keys (`email|apiKey`)
   - `apikey.txt` — AISA keys (legacy one-key-per-line)
   - `grok_keys.txt` — Grok status lines
 - **`aisa_account.json`** - AISA email + key + import status
+- **`yunwu_account.json`** - Yunwu username/password + key + import status
 - **`result.txt`** - Grok `email:password` lines from farm
 - **`grok_accounts.json`** - Grok account metadata
 - **`login_result.txt`** - Grok login/inject status
@@ -304,6 +310,7 @@ token-listrik/
 │   ├── tokengo.js        # TokenGo API key harvesting with proxy rotation
 │   ├── zyloo.js          # Zyloo Google login + sk-zy key harvest (Kimi K3)
 │   ├── aisa.js           # AISA signup farm (Camoufox + tempmail)
+│   ├── yunwu.js          # Yunwu signup farm (NewAPI + tempmail + go-captcha)
 │   ├── grok.js           # Grok farm + login + 9Router inject
 │   ├── router-inject.js  # 9Router browser inject (Grok CLI OAuth)
 │   ├── tempmail.js       # Tempmail create + OTP poll
@@ -422,6 +429,18 @@ ISC — see [LICENSE](./LICENSE).
 **lulucianai**
 
 - GitHub: [@lulucianai](https://github.com/lulucianai)
+
+
+
+## 📚 Internal docs (for maintainers / agents)
+
+| Doc | Description |
+|-----|-------------|
+| [AGENTS.md](./AGENTS.md) | Rules for AI coding agents |
+| [docs/PROGRESS.md](./docs/PROGRESS.md) | Feature progress & session log |
+| [docs/TEMPMAIL.md](./docs/TEMPMAIL.md) | Tempmail lock status & CF Worker |
+| [docs/9ROUTER.md](./docs/9ROUTER.md) | 9Router auth & inject patterns |
+| [workers/tempmail/README.md](./workers/tempmail/README.md) | Deploy self-hosted tempmail Worker |
 
 ## 🙏 Credits & Acknowledgements
 

@@ -152,6 +152,8 @@ function createConfig() {
       : null,
     browserArgsSets: parseBrowserArgsSets(env.BROWSER_ARGS_SETS),
     tempmailApi: env.TEMPMAIL_API || DEFAULT_TEMPMAIL_API,
+    // Required by tempmail.adrnode.com when public API is locked
+    tempmailApiKey: env.TEMPMAIL_API_KEY || env.TEMPMAIL_KEY || "",
     tempmailDomains,
     turnstileWaitTimeout: toPositiveNumber(
       env.TURNSTILE_WAIT_TIMEOUT_MS,

@@ -9,6 +9,7 @@ const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
 const { runZylooAutomation } = require("./src/zyloo");
 const { runAisaAutomation } = require("./src/aisa");
+const { runYunwuAutomation } = require("./src/yunwu");
 const { runGrokFarmAutomation, runGrokLoginAutomation } = require("./src/grok");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
@@ -178,7 +179,7 @@ function displayInfoPanel() {
             "Proxy Pool",
             proxies.length > 0 ? `${proxies.length} proxies` : "not configured",
         ],
-        ["Engine", "Puppeteer (Google) + Camoufox (AISA/Grok)"],
+        ["Engine", "Puppeteer (Google) + Camoufox (AISA/Grok/Yunwu)"],
     ];
 
     const labelWidth = 15;
@@ -338,6 +339,7 @@ async function main() {
                 choices: [
                     { name: "Run Automations", value: "run" },
                     { name: "AISA Farm (Camoufox + 9Router)", value: "aisa" },
+                    { name: "Yunwu Farm (Camoufox + tempmail + 9Router)", value: "yunwu" },
                     { name: "Grok Farm (Camoufox + 9Router)", value: "grok_farm" },
                     { name: "Grok Login + 9Router Inject", value: "grok_login" },
                     { name: "Settings", value: "settings" },
@@ -454,6 +456,20 @@ async function main() {
                     },
                 ]);
                 await runAisaAutomation(count, { signupOnly });
+                await waitForEnter();
+                break;
+            }
+            case "yunwu": {
+                const count = await askFarmCount(getConfig().farmCount || 1);
+                const { signupOnly } = await inquirer.prompt([
+                    {
+                        type: "confirm",
+                        name: "signupOnly",
+                        message: "Signup only (skip 9Router import)?",
+                        default: false,
+                    },
+                ]);
+                await runYunwuAutomation(count, { signupOnly });
                 await waitForEnter();
                 break;
             }

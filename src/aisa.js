@@ -12,6 +12,7 @@ const { handleTurnstile } = require("./turnstile");
 const { launchCamoufox, newFarmPage } = require("./camoufox");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
+const { routerApiFetch } = require("./router-api");
 
 const AUTH_SIGNUP_URL =
   "https://auth.aisa.one/sign-up?redirect_url=https%3A%2F%2Fconsole.aisa.one%2F";
@@ -47,7 +48,9 @@ async function findCodeInput(page, frames) {
 }
 
 const AISA_BASE_URL = "https://api.aisa.one/v1";
-const AISA_DEFAULT_MODEL = "gpt-4.1";
+/** Default chat model for new AISA connections (override after live /models if needed). */
+const AISA_DEFAULT_MODEL = "deepseek-v4-pro";
+const AISA_PROVIDER_ALIAS_PREFIX = "aisa";
 
 function saveApiKey(email, apiKey, log, extra = {}) {
   const resultFile = getResultFile("aisa");
@@ -85,17 +88,15 @@ function saveApiKey(email, apiKey, log, extra = {}) {
 async function ensureAisaProviderNode(log) {
   log("Checking AISA provider node in 9Router...");
 
-  const config = getConfig();
-  const baseUrl = config.routerUrl.replace(/\/$/, "");
-
-  const listResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
+  const listResponse = await routerApiFetch(
+    "/api/provider-nodes",
+    { method: "GET" },
+    log,
+  );
 
   if (!listResponse.ok) {
     throw new Error(
-      `Failed to list provider nodes: ${listResponse.status}`,
+      `Failed to list provider nodes: ${listResponse.status} ${await listResponse.text()}`,
     );
   }
 
@@ -117,20 +118,20 @@ async function ensureAisaProviderNode(log) {
 
   log("Creating AISA provider node...");
 
-  const createResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  const createResponse = await routerApiFetch(
+    "/api/provider-nodes",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "AISA",
+        prefix: "aisa",
+        apiType: "chat",
+        baseUrl: AISA_BASE_URL,
+        type: "openai-compatible",
+      }),
     },
-    body: JSON.stringify({
-      name: "AISA",
-      prefix: "aisa",
-      apiType: "chat",
-      baseUrl: AISA_BASE_URL,
-      type: "openai-compatible",
-    }),
-  });
+    log,
+  );
 
   if (!createResponse.ok) {
     const errorText = await createResponse.text();
@@ -153,32 +154,123 @@ async function ensureAisaProviderNode(log) {
 }
 
 /**
+ * Pull model IDs from AISA (via 9Router connection proxy) and register them
+ * as custom models on the AISA provider node so they show up in the dashboard.
+ *
+ * @param {string} providerNodeId
+ * @param {string} connectionId
+ * @param {Function} log
+ * @returns {Promise<{added:number, total:number, defaultModel:string|null}>}
+ */
+async function syncAisaModelsToRouter(providerNodeId, connectionId, log) {
+  log("Syncing AISA models into 9Router custom model list...");
+
+  const modelsRes = await routerApiFetch(
+    `/api/providers/${connectionId}/models`,
+    { method: "GET" },
+    log,
+  );
+  if (!modelsRes.ok) {
+    throw new Error(
+      `Failed to list AISA models: ${modelsRes.status} ${await modelsRes.text()}`,
+    );
+  }
+
+  const modelsData = await modelsRes.json();
+  const models = modelsData.models || [];
+  if (models.length === 0) {
+    log("No models returned from AISA /v1/models");
+    return { added: 0, total: 0, defaultModel: null };
+  }
+
+  // Register under node id (dashboard) + short prefix alias
+  const aliases = [...new Set([providerNodeId, AISA_PROVIDER_ALIAS_PREFIX])];
+  let added = 0;
+
+  for (const m of models) {
+    const id = m.id || m.name || m.model;
+    if (!id) {
+      continue;
+    }
+    for (const providerAlias of aliases) {
+      const r = await routerApiFetch(
+        "/api/models/custom",
+        {
+          method: "POST",
+          body: JSON.stringify({ id, type: "llm", providerAlias }),
+        },
+        log,
+      );
+      if (r.ok) {
+        try {
+          const j = await r.json();
+          if (j.added) {
+            added += 1;
+          }
+        } catch {
+          // ignore parse
+        }
+      }
+    }
+  }
+
+  // Prefer configured default if present; else a free model; else first id
+  const preferred =
+    models.find((m) => (m.id || m.name) === AISA_DEFAULT_MODEL) ||
+    models.find((m) => m.recharge_required === false) ||
+    models[0];
+  const defaultModel =
+    (preferred && (preferred.id || preferred.name)) || AISA_DEFAULT_MODEL;
+
+  // Patch connection defaultModel
+  try {
+    await routerApiFetch(
+      `/api/providers/${connectionId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          defaultModel,
+          isActive: true,
+        }),
+      },
+      log,
+    );
+  } catch (e) {
+    log(`Could not set defaultModel: ${e.message}`);
+  }
+
+  log(
+    `AISA models synced: ${models.length} upstream, ${added} new custom entries, default=${defaultModel}`,
+  );
+  return { added, total: models.length, defaultModel };
+}
+
+/**
  * Register a farmed AISA API key on 9Router under the AISA provider node.
+ * Also imports the live AISA model catalog into 9Router custom models.
  */
 async function importAisaKeyToRouter(providerNodeId, email, apiKey, log) {
   log("Importing AISA key to 9Router...");
 
-  const config = getConfig();
-  const baseUrl = config.routerUrl.replace(/\/$/, "");
   const short = email.split("@")[0].slice(0, 12);
   const connectionName = `aisa_${short}`;
 
-  const response = await fetch(`${baseUrl}/api/providers`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  const response = await routerApiFetch(
+    "/api/providers",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        provider: providerNodeId,
+        name: connectionName,
+        apiKey,
+        defaultModel: AISA_DEFAULT_MODEL,
+        priority: 1,
+        proxyPoolId: null,
+        testStatus: "active",
+      }),
     },
-    body: JSON.stringify({
-      provider: providerNodeId,
-      name: connectionName,
-      apiKey,
-      defaultModel: AISA_DEFAULT_MODEL,
-      priority: 1,
-      proxyPoolId: null,
-      testStatus: "active",
-    }),
-  });
+    log,
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -188,6 +280,42 @@ async function importAisaKeyToRouter(providerNodeId, email, apiKey, log) {
   }
 
   log(`AISA key for ${email} imported to 9Router as "${connectionName}"`);
+
+  // Resolve connection id (response may or may not include it)
+  let connectionId =
+    (await response
+      .clone()
+      .json()
+      .catch(() => ({}))).id ||
+    (await response
+      .clone()
+      .json()
+      .catch(() => ({}))).connection?.id ||
+    null;
+
+  if (!connectionId) {
+    const list = await routerApiFetch("/api/providers", { method: "GET" }, log);
+    if (list.ok) {
+      const data = await list.json();
+      const conns = data.connections || data || [];
+      const found = (Array.isArray(conns) ? conns : []).find(
+        (c) => c.name === connectionName,
+      );
+      connectionId = found?.id || null;
+    }
+  }
+
+  if (connectionId) {
+    try {
+      await syncAisaModelsToRouter(providerNodeId, connectionId, log);
+    } catch (e) {
+      log(`Model sync failed (key still imported): ${e.message}`);
+    }
+  } else {
+    log("Could not resolve connection id — skip model sync");
+  }
+
+  return { connectionName, connectionId };
 }
 
 async function farmOneAisa(idx, log, updateProgress, opts = {}) {
@@ -636,4 +764,5 @@ module.exports = {
   runAisaAutomation,
   ensureAisaProviderNode,
   importAisaKeyToRouter,
+  syncAisaModelsToRouter,
 };

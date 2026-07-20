@@ -37,7 +37,9 @@ async function launchCamoufox(options = {}) {
         humanize: true,
         os: "windows",
         locale: "en-US",
-        geoip: true,
+        // geoip needs a valid MaxMind MMDB; broken/missing DB throws
+        // "Invalid Extended Type at offset 0 val 7" — default off for reliability.
+        geoip: options.geoip === true,
         args: ["--no-sandbox"],
     };
 

@@ -1,7 +1,7 @@
 {
   "name": "token-listrik",
   "version": "1.1.0",
-  "description": "CLI to harvest AI provider tokens (Kiro, Cloudflare, Codebuddy, TokenGo, AISA, Grok) and wire them into 9Router — Puppeteer + Camoufox, multi-worker, proxy pool",
+  "description": "CLI to harvest AI provider tokens (Kiro, Cloudflare, Codebuddy, TokenGo, AISA, Grok, Yunwu, Zyloo) and wire them into 9Router \u2014 Puppeteer + Camoufox, multi-worker, proxy pool",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -26,7 +26,9 @@
     "workers-ai",
     "9router",
     "parallel-processing",
-    "browser-automation"
+    "browser-automation",
+    "yunwu",
+    "tempmail"
   ],
   "author": {
     "name": "lulucianai",
