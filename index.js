@@ -10,6 +10,10 @@ const { runTokenGoAutomation } = require("./src/tokengo");
 const { runZylooAutomation } = require("./src/zyloo");
 const { runAisaAutomation } = require("./src/aisa");
 const { runYunwuAutomation } = require("./src/yunwu");
+const {
+    runTokenRouterInject,
+    runTokenRouterFarm,
+} = require("./src/tokenrouter");
 const { runGrokFarmAutomation, runGrokLoginAutomation } = require("./src/grok");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
@@ -342,6 +346,10 @@ async function main() {
                     { name: "Yunwu Farm (Camoufox + tempmail + 9Router)", value: "yunwu" },
                     { name: "Grok Farm (Camoufox + 9Router)", value: "grok_farm" },
                     { name: "Grok Login + 9Router Inject", value: "grok_login" },
+                    {
+                        name: "TokenRouter free GLM → 9Router (farm + inject)",
+                        value: "tokenrouter",
+                    },
                     { name: "Settings", value: "settings" },
                     { name: "Exit", value: "exit" },
                 ],
@@ -470,6 +478,97 @@ async function main() {
                     },
                 ]);
                 await runYunwuAutomation(count, { signupOnly });
+                await waitForEnter();
+                break;
+            }
+            case "tokenrouter": {
+                console.log("\n  TokenRouter free GLM 5.2 → 9Router");
+                console.log("  Paths: tempmail farm | Google Gmail | manual key paste\n");
+                const { trMode } = await inquirer.prompt([
+                    {
+                        type: "list",
+                        name: "trMode",
+                        message: "TokenRouter mode:",
+                        choices: [
+                            {
+                                name: "Farm both (tempmail + Google) → 9Router",
+                                value: "both",
+                            },
+                            {
+                                name: "Farm tempmail only → 9Router",
+                                value: "tempmail",
+                            },
+                            {
+                                name: "Farm Google Gmail → 9Router",
+                                value: "google",
+                            },
+                            {
+                                name: "Manual key inject only",
+                                value: "manual",
+                            },
+                        ],
+                    },
+                ]);
+                try {
+                    if (trMode === "manual") {
+                        const { keyInput } = await inquirer.prompt([
+                            {
+                                type: "password",
+                                name: "keyInput",
+                                message:
+                                    "TokenRouter API key (Enter = TOKENROUTER_API_KEY from .env):",
+                                mask: "*",
+                            },
+                        ]);
+                        await runTokenRouterInject({
+                            apiKey: keyInput || undefined,
+                        });
+                    } else {
+                        const methods =
+                            trMode === "both"
+                                ? ["tempmail", "google"]
+                                : [trMode];
+                        let googleAccount;
+                        if (methods.includes("google")) {
+                            const { gEmail, gPassword } = await inquirer.prompt([
+                                {
+                                    type: "input",
+                                    name: "gEmail",
+                                    message: "Gmail:",
+                                },
+                                {
+                                    type: "password",
+                                    name: "gPassword",
+                                    message: "Gmail password:",
+                                    mask: "*",
+                                },
+                            ]);
+                            googleAccount = {
+                                email: gEmail.trim(),
+                                password: gPassword,
+                            };
+                        }
+                        const count = methods.includes("tempmail")
+                            ? await askFarmCount(getConfig().farmCount || 1)
+                            : 1;
+                        const { signupOnly } = await inquirer.prompt([
+                            {
+                                type: "confirm",
+                                name: "signupOnly",
+                                message: "Signup only (skip 9Router inject)?",
+                                default: false,
+                            },
+                        ]);
+                        await runTokenRouterFarm({
+                            methods,
+                            count,
+                            googleAccount,
+                            signupOnly,
+                        });
+                    }
+                } catch (e) {
+                    console.error(`\n  Error: ${e.message}\n`);
+                }
                 await waitForEnter();
                 break;
             }

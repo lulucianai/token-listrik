@@ -137,6 +137,9 @@ function createConfig() {
     slowMo: toPositiveNumber(env.BROWSER_SLOW_MO, 2),
     routerUrl: env.ROUTER_URL || DEFAULT_ROUTER_URL,
     routerPassword: env.ROUTER_PASSWORD || DEFAULT_ROUTER_PASSWORD,
+    // TokenRouter free models (manual Google signup → key → inject to 9Router)
+    // https://www.tokenrouter.com/models  free GLM 5.2 until 2026-07-25
+    tokenrouterApiKey: env.TOKENROUTER_API_KEY || env.TOKENROUTER_KEY || "",
     chromeExecutablePath: env.CHROME_EXECUTABLE_PATH || DEFAULT_CHROME_PATH,
     accountFile: path.resolve(
       ROOT_DIR,

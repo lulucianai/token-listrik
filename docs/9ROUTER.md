@@ -53,7 +53,37 @@ ROUTER_PASSWORD=...
 | AISA | provider-nodes `aisa` + `/api/providers` | base `https://api.aisa.one/v1` |
 | Yunwu | provider-nodes `yunwu` + `/api/providers` | base `https://yunwu.ai/v1` |
 | Zyloo | provider-nodes `zyloo` + `/api/providers` | base `https://api.zyloo.io/v1` |
+| TokenRouter | provider-nodes `tokenrouter` + `/api/providers` | base `https://api.tokenrouter.com/v1` — **farm** tempmail (auto) / Google / manual key; free GLM 5.2 until **2026-07-25** |
 | Grok | **Browser** OAuth on Grok CLI page | `router-inject.js` (not simple REST key) |
+
+## TokenRouter free GLM 5.2
+
+Promo until **2026-07-25**. CLI: **TokenRouter free GLM → 9Router (farm + inject)**.
+
+| Mode | How |
+|------|-----|
+| **tempmail** | Slide captcha (`scripts/pbd_slide_captcha.py`) + OTP via tempmail + Cap widget → create key → 9Router |
+| **Google** | Social login (prefer `PW_HEADLESS=0` if popup/2FA) → key → 9Router |
+| **manual** | Paste `TOKENROUTER_API_KEY` / paste in menu |
+
+```env
+TOKENROUTER_API_KEY=          # optional for manual inject
+TEMPMAIL_API_KEY=tm_...
+ROUTER_URL=http://127.0.0.1:20128/
+ROUTER_PASSWORD=...
+```
+
+Auth stack: PaleBlueDot GraphQL → `POST …/backend-api/api/user/pbd-login` → NewAPI `POST …/backend-api/api/token/`.
+
+What inject does (`src/tokenrouter.js`):
+
+1. Validate key against `GET https://api.tokenrouter.com/v1/models`
+2. Ensure provider-node `prefix=tokenrouter`, base `https://api.tokenrouter.com/v1`
+3. `POST /api/providers` connection `tokenrouter_free`
+4. Register custom model **`z-ai/glm-5.2-free`** (and live catalog if available)
+5. Append key to `tokenrouter_keys.txt` / `tokenrouter_account.json`
+
+Use model id: `z-ai/glm-5.2-free` (or `tokenrouter/z-ai/glm-5.2-free` depending on 9Router alias rules).
 
 ## AISA models
 

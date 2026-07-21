@@ -27,6 +27,7 @@ CLI to automate AI API credential setup and import them into a local OpenAI-comp
   - Free event is **1 account per IP** — use proxy pool
 - 🤖 **AISA Farm** - Auto signup via Camoufox + tempmail, then import API key to 9Router (openai-compatible `api.aisa.one/v1`)
 - ☁️ **Yunwu Farm** - Auto signup on [yunwu.ai](https://yunwu.ai/register) via Camoufox + tempmail (NewAPI, go-captcha click-shape on send-code) → API key → 9Router (`https://yunwu.ai/v1`, default `deepseek-v4-pro`)
+- 🎁 **TokenRouter free GLM** - Farm tempmail (auto captcha+OTP) or Google at [tokenrouter.com](https://www.tokenrouter.com/models) → API key → inject into 9Router (`z-ai/glm-5.2-free`, free until 2026-07-25)
 - ⚡ **Grok Farm** - Auto signup on accounts.x.ai + optional 9Router Grok CLI inject
 - 🔐 **Grok Login** - Login existing Grok accounts + 9Router OAuth inject
 - 🚀 **Multi-select Automations** - Checkbox to run any combination of Google-based automations in parallel
